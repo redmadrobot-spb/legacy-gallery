@@ -9,7 +9,11 @@
 import UIKit
 
 open class GalleryZoomTransitionController: NSObject, UIViewControllerTransitioningDelegate {
-    open weak var sourceTransition: GalleryZoomTransitionDelegate?
+    private weak var sourceTransition: GalleryZoomTransitionDelegate?
+
+    init(sourceTransition: GalleryZoomTransitionDelegate? = nil) {
+        self.sourceTransition = sourceTransition
+    }
 
     open func animationController(
         forPresented presented: UIViewController, presenting: UIViewController, source: UIViewController
