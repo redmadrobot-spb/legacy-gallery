@@ -11,7 +11,7 @@ import UIKit
 open class GalleryZoomTransitionController: NSObject, UIViewControllerTransitioningDelegate {
     private weak var sourceTransition: GalleryZoomTransitionDelegate?
 
-    init(sourceTransition: GalleryZoomTransitionDelegate? = nil) {
+    public init(sourceTransition: GalleryZoomTransitionDelegate? = nil) {
         self.sourceTransition = sourceTransition
     }
 
