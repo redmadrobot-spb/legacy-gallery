@@ -10,6 +10,7 @@ import UIKit
 
 open class GalleryZoomTransitionController: NSObject, UIViewControllerTransitioningDelegate {
     private weak var sourceTransition: GalleryZoomTransitionDelegate?
+    open var prepareToDismiss: (() -> Void)?
 
     public init(sourceTransition: GalleryZoomTransitionDelegate? = nil) {
         self.sourceTransition = sourceTransition
@@ -37,6 +38,7 @@ open class GalleryZoomTransitionController: NSObject, UIViewControllerTransition
             let destinationTransition = self.sourceTransition
         else { return nil }
 
+        prepareToDismiss?()
         let transition = sourceTransition.zoomTransition ?? GalleryZoomTransition(interactive: false)
         transition.sourceTransition = sourceTransition
         transition.destinationTransition = destinationTransition
@@ -54,6 +56,7 @@ open class GalleryZoomTransitionController: NSObject, UIViewControllerTransition
     ) -> UIViewControllerInteractiveTransitioning? {
         guard let transition = animator as? GalleryZoomTransition else { return nil }
 
+        prepareToDismiss?()
         return transition.interactive ? transition : nil
     }
 }
