@@ -24,6 +24,7 @@ public enum GalleryMedia {
     }
 
     public struct Image {
+        public var index: Int = 0
         public var previewImage: UIImage?
         public var previewImageLoader: PreviewImageLoader?
         public var fullImage: UIImage?
@@ -43,6 +44,7 @@ public enum GalleryMedia {
     }
 
     public struct Video {
+        public var index: Int = 0
         public var source: VideoSource?
         public var previewImage: UIImage?
         public var previewImageLoader: PreviewImageLoader?
