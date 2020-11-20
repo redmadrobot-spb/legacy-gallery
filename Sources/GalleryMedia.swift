@@ -24,18 +24,20 @@ public enum GalleryMedia {
     }
 
     public struct Image {
-        public var index: Int = 0
+        public var index: Int
         public var previewImage: UIImage?
         public var previewImageLoader: PreviewImageLoader?
         public var fullImage: UIImage?
         public var fullImageLoader: FullImageLoader?
 
         public init(
+            index: Int = 0,
             previewImage: UIImage? = nil,
             previewImageLoader: PreviewImageLoader? = nil,
             fullImage: UIImage? = nil,
             fullImageLoader: FullImageLoader? = nil
         ) {
+            self.index = index
             self.previewImage = previewImage
             self.previewImageLoader = previewImageLoader
             self.fullImage = fullImage
@@ -44,18 +46,20 @@ public enum GalleryMedia {
     }
 
     public struct Video {
-        public var index: Int = 0
+        public var index: Int
         public var source: VideoSource?
         public var previewImage: UIImage?
         public var previewImageLoader: PreviewImageLoader?
         public var videoLoader: VideoLoader?
 
         public init(
+            index: Int = 0,
             source: VideoSource? = nil,
             previewImage: UIImage? = nil,
             previewImageLoader: PreviewImageLoader? = nil,
             videoLoader: VideoLoader? = nil
         ) {
+            self.index = index
             self.source = source
             self.previewImage = previewImage
             self.previewImageLoader = previewImageLoader
