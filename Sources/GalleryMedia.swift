@@ -15,13 +15,7 @@ public enum GalleryMedia {
 
     public typealias PreviewImageLoader = (_ size: CGSize, _ completion: @escaping (Result<UIImage, Error>) -> Void) -> Void
     public typealias ImageLoader = (_ completion: @escaping (Result<UIImage, Error>) -> Void) -> Void
-    public typealias VideoLoader = (_ type: Video.LoadingType, _ completion: @escaping (Result<VideoSource, Error>) -> Void) -> Void
-
-    public enum VideoSource {
-        case url(URL)
-        case asset(AVAsset)
-        case playerItem(AVPlayerItem)
-    }
+    public typealias VideoLoader = (_ type: Video.LoadingType, _ completion: @escaping (Result<URL, Error>) -> Void) -> Void
 
     public struct Image {
         public var index: Int
@@ -52,20 +46,20 @@ public enum GalleryMedia {
         }
 
         public var index: Int
-        public var source: VideoSource?
+        public var videoAsset: AVAsset?
         public var previewImage: UIImage?
         public var previewImageLoader: PreviewImageLoader?
         public var videoLoader: VideoLoader?
 
         public init(
             index: Int = 0,
-            source: VideoSource? = nil,
+            videoAsset: AVAsset? = nil,
             previewImage: UIImage? = nil,
             previewImageLoader: PreviewImageLoader? = nil,
             videoLoader: VideoLoader? = nil
         ) {
             self.index = index
-            self.source = source
+            self.videoAsset = videoAsset
             self.previewImage = previewImage
             self.previewImageLoader = previewImageLoader
             self.videoLoader = videoLoader

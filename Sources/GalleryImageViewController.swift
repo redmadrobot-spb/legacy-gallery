@@ -8,51 +8,50 @@
 
 import UIKit
 
-open class GalleryImageViewController: GalleryItemViewController, UIScrollViewDelegate {
-    public let image: GalleryMedia.Image
-    private var fullImage: UIImage?
+class GalleryImageViewController: UIViewController, UIScrollViewDelegate, GalleryZoomTransitionDelegate {
+    private let titleView: UIView = UIView()
+    private let closeButton: UIButton = UIButton(type: .custom)
+    private let shareButton: UIButton = UIButton(type: .custom)
+    private let scrollView: UIScrollView = UIScrollView()
+    private let imageView: UIImageView = UIImageView()
+    private let animatingImageView: UIImageView = UIImageView()
+    private let loadingIndicatorView: UIActivityIndicatorView = UIActivityIndicatorView(style: .whiteLarge)
 
-    open var maximumZoomScale: CGFloat = 2
-    open var exitScaleEnabled: Bool = false
-    open var hideControlsOnDrag: Bool = false
-    open var hideControlsOnZoom: Bool = false
+    private let tapGesture: UITapGestureRecognizer = UITapGestureRecognizer()
 
-    open var setupAppearance: ((GalleryImageViewController) -> Void)?
+    open var image: GalleryMedia.Image = GalleryMedia.Image()
 
+    open var closeAction: (() -> Void)?
+    open var setupAppearance: ((UIViewController) -> Void)?
+    open var presenterInterfaceOrientations: (() -> UIInterfaceOrientationMask?)?
+
+    open var closeTitle: String = "Close"
+    open var galleryShareOption: GalleryShareOption = GalleryShareOption(enabled: false, icon: nil, actionHandler: nil)
+    open var sharingHandler: ((Bool) -> Void)?
+
+    private var scrollSize: CGSize = .zero
+    private var imageSize: CGSize = .zero
+
+    private var controlsAreVisible: Bool = false
+    private var statusBarHidden: Bool = false
     private var isShown: Bool = false
     private var isLaidOut: Bool = false
 
-    private var scrollSize: CGSize = .zero
     private var lastScale: CGFloat = 1.0
     private var exitScale: CGFloat = 0.0
     private var lastFrame: CGRect?
+    private var isTransitioning: Bool = false
 
-    public let scrollView: UIScrollView = UIScrollView()
-    public let imageView: UIImageView = UIImageView()
-
-    public init(image: GalleryMedia.Image) {
-        self.image = image
-        fullImage = image.fullImage
-
-        super.init(nibName: nil, bundle: nil)
-    }
-
-    required public init?(coder: NSCoder) {
-        fatalError("Not implemented")
-    }
-
-    open override func viewDidLoad() {
+    override open func viewDidLoad() {
         super.viewDidLoad()
 
-        // Scroll View
+        view.backgroundColor = .black
 
+        // Scroll View
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         scrollView.canCancelContentTouches = false
         scrollView.delegate = self
-        scrollView.backgroundColor = .clear
-        if #available(iOS 11.0, *) {
-            scrollView.contentInsetAdjustmentBehavior = .never
-        }
+        scrollView.backgroundColor = .black
         view.addSubview(scrollView)
 
         imageView.translatesAutoresizingMaskIntoConstraints = true
@@ -60,43 +59,154 @@ open class GalleryImageViewController: GalleryItemViewController, UIScrollViewDe
         imageView.clipsToBounds = true
         scrollView.addSubview(imageView)
 
-        // Constraints
+        animatingImageView.translatesAutoresizingMaskIntoConstraints = true
+        animatingImageView.contentMode = .scaleAspectFill
+        animatingImageView.clipsToBounds = true
+        animatingImageView.backgroundColor = .clear
 
+        // Title View
+        titleView.translatesAutoresizingMaskIntoConstraints = false
+        titleView.backgroundColor = UIColor(white: 0, alpha: 0.7)
+        titleView.isHidden = !controlsAreVisible
+        view.addSubview(titleView)
+
+        closeButton.accessibilityIdentifier = "closeButton"
+        closeButton.translatesAutoresizingMaskIntoConstraints = false
+        closeButton.addTarget(self, action: #selector(closeTap), for: .touchUpInside)
+        closeButton.setTitle(closeTitle, for: .normal)
+        closeButton.setTitleColor(.white, for: .normal)
+        closeButton.backgroundColor = .clear
+        closeButton.contentEdgeInsets = UIEdgeInsets(top: 0, left: 20, bottom: 0, right: 20)
+        titleView.addSubview(closeButton)
+
+        shareButton.translatesAutoresizingMaskIntoConstraints = false
+        shareButton.addTarget(self, action: #selector(shareTap), for: .touchUpInside)
+        shareButton.setImage(galleryShareOption.icon, for: .normal)
+        shareButton.backgroundColor = .clear
+        shareButton.contentEdgeInsets = UIEdgeInsets(top: 0, left: 20, bottom: 0, right: 20)
+        shareButton.tintColor = .white
+        titleView.addSubview(shareButton)
+        updateShare()
+
+        tapGesture.addTarget(self, action: #selector(toggleTap))
+        view.addGestureRecognizer(tapGesture)
+
+        // Loading Indicator
+        loadingIndicatorView.translatesAutoresizingMaskIntoConstraints = false
+        loadingIndicatorView.hidesWhenStopped = true
+        loadingIndicatorView.color = .white
+        view.addSubview(loadingIndicatorView)
+
+        // Constraints
         NSLayoutConstraint.activate([
             scrollView.topAnchor.constraint(equalTo: view.topAnchor),
             scrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            titleView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            titleView.heightAnchor.constraint(equalToConstant: 44),
+            titleView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            titleView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            closeButton.centerYAnchor.constraint(equalTo: titleView.centerYAnchor),
+            closeButton.leadingAnchor.constraint(equalTo: titleView.leadingAnchor),
+            closeButton.heightAnchor.constraint(equalToConstant: 44),
+            shareButton.centerYAnchor.constraint(equalTo: titleView.centerYAnchor),
+            shareButton.trailingAnchor.constraint(equalTo: titleView.trailingAnchor),
+            shareButton.heightAnchor.constraint(equalToConstant: 44),
+            loadingIndicatorView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            loadingIndicatorView.centerYAnchor.constraint(equalTo: view.centerYAnchor),
         ])
 
+        // Transition
+        transition.startTransition = { [weak self] in
+            self?.close()
+        }
+        transition.shouldStartInteractiveTransition = { [weak self] in
+            guard let self = self else { return true }
+
+            let orientation: UInt = 1 << UIApplication.shared.statusBarOrientation.rawValue
+            let supportedOrientations = self.presenterInterfaceOrientations?()
+                ?? self.presentingViewController?.supportedInterfaceOrientations
+                ?? .portrait
+            let isFullInteractive = supportedOrientations.rawValue & orientation > 0
+
+            self.transition.interactive = true
+            self.transition.sourceTransition = self
+            self.lastFrame = nil
+            self.isTransitioning = true
+
+            return isFullInteractive
+        }
+        transition.sourceRootView = { [weak self] in
+            self?.view
+        }
+        transition.completion = { [weak self] _ in
+            guard let self = self else { return }
+
+            self.transition.interactive = false
+            self.isTransitioning = false
+        }
+        view.addGestureRecognizer(transition.panGestureRecognizer)
+
         // Image Loading
+        if let fullImage = image.image {
+            imageView.image = fullImage
+        } else if let previewImage = image.previewImage {
+            imageView.image = previewImage
+        }
+        if let image = imageView.image {
+            imageSize = image.size
+        }
 
-        imageView.image = fullImage ?? image.previewImage
-        mediaSize = imageView.image?.size ?? .zero
-
-        // Controls
-
-        setupTransition()
-        setupCommonControls()
+        // Other
         setupAppearance?(self)
     }
 
-    open override func viewWillAppear(_ animated: Bool) {
+    override open func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
 
         if !isShown {
             isShown = true
-            load()
+
+            if let imageLoader = image.imageLoader, image.image == nil {
+                loadingIndicatorView.startAnimating()
+
+                imageLoader { [weak self] result in
+                    guard let self = self else { return }
+
+                    self.loadingIndicatorView.stopAnimating()
+
+                    switch result {
+                        case .success(let image):
+                            self.image.image = image
+                            self.imageView.image = image
+
+                            let size = image.size
+                            let equal = abs(self.imageSize.width - size.width) < 0.1 && abs(self.imageSize.height - size.height) < 0.1
+                            if !equal {
+                                self.imageSize = size
+                                self.scrollSize = self.scrollView.frame.size
+                                self.setupScrollView(with: self.scrollSize)
+                            }
+                        case .failure:
+                            break
+                    }
+
+                    self.updateShare()
+                }
+            }
         }
     }
 
-    open override func viewDidAppear(_ animated: Bool) {
+    override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
 
         isTransitioning = false
+
+        showControls(false)
     }
 
-    open override func viewDidLayoutSubviews() {
+    override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
 
         if !isLaidOut {
@@ -106,7 +216,12 @@ open class GalleryImageViewController: GalleryItemViewController, UIScrollViewDe
         }
     }
 
-    open override func viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator) {
+    override var prefersStatusBarHidden: Bool { statusBarHidden }
+    override var preferredStatusBarStyle: UIStatusBarStyle { .lightContent }
+    override var shouldAutorotate: Bool { true }
+    override var supportedInterfaceOrientations: UIInterfaceOrientationMask { .all }
+
+    override func viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator) {
         super.viewWillTransition(to: size, with: coordinator)
 
         guard !isTransitioning else { return }
@@ -122,53 +237,64 @@ open class GalleryImageViewController: GalleryItemViewController, UIScrollViewDe
     }
 
     // MARK: - Controls
+    private func showControls(_ show: Bool) {
+        controlsAreVisible = show
+        statusBarHidden = !show
 
-    open override var isShareAvailable: Bool {
-        fullImage != nil
+        if show {
+            titleView.alpha = 0
+            titleView.isHidden = false
+        }
+
+        UIView.animate(withDuration: 0.15, delay: 0, options: [],
+            animations: {
+                self.setNeedsStatusBarAppearanceUpdate()
+
+                self.titleView.alpha = show ? 1 : 0
+            },
+            completion: { finished in
+                if finished {
+                    self.titleView.isHidden = !show
+                }
+            }
+        )
     }
 
-    open override func shareTap() {
-        guard let image = fullImage else { return }
+    @objc private func toggleTap() {
+        showControls(!controlsAreVisible)
+    }
+
+    @objc private func closeTap() {
+        isTransitioning = true
+
+        close()
+    }
+
+    @objc private func shareTap() {
+        guard let image = image.image else { return }
 
         let controller = UIActivityViewController(activityItems: [ image ], applicationActivities: nil)
+        controller.completionWithItemsHandler = { [unowned self] activityType, completed, _, _ in
+            if completed {
+                self.galleryShareOption.actionHandler?(.success(.image(self.image)), activityType)
+            }
+        }
         present(controller, animated: true, completion: nil)
     }
 
-    // MARK: - Image
+    private func updateShare() {
+        shareButton.isHidden = image.image == nil || !galleryShareOption.enabled
+    }
 
-    private func load() {
-        guard let fullImageLoader = image.fullImageLoader, fullImage == nil else { return }
-
-        loadingIndicatorView.startAnimating()
-
-        fullImageLoader { [weak self] result in
-            guard let self = self else { return }
-
-            self.loadingIndicatorView.stopAnimating()
-
-            switch result {
-                case .success(let image):
-                    self.fullImage = image
-                    self.addFadeTransition(view: self.imageView)
-                    self.imageView.image = image
-
-                    let size = image.size
-                    let widthDiff = abs(self.mediaSize.width - size.width)
-                    let heightDiff = abs(self.mediaSize.height - size.height)
-                    let equal = widthDiff < 0.1 && heightDiff < 0.1
-                    if !equal {
-                        self.mediaSize = size
-                        self.scrollSize = self.scrollView.frame.size
-                        self.setupScrollView(with: self.scrollSize)
-                    }
-                case .failure:
-                    break
-            }
-
-            self.updateControls()
+    private func close() {
+        if let closeAction = closeAction {
+            closeAction()
+        } else {
+            dismiss(animated: true, completion: nil)
         }
     }
 
+    // MARK: - Image
     private func setupScrollView(with size: CGSize) {
         scrollView.minimumZoomScale = 1.0
         scrollView.maximumZoomScale = 1.0
@@ -176,7 +302,7 @@ open class GalleryImageViewController: GalleryItemViewController, UIScrollViewDe
         scrollView.contentInset = UIEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
         scrollView.scrollIndicatorInsets = UIEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
 
-        imageView.frame = CGRect(origin: .zero, size: mediaSize)
+        imageView.frame = CGRect(origin: .zero, size: imageSize)
 
         calcZoom(with: size)
         zoomAll()
@@ -185,15 +311,15 @@ open class GalleryImageViewController: GalleryItemViewController, UIScrollViewDe
     }
 
     private func calcZoom(with size: CGSize) {
-        let contentSize = mediaSize
+        let contentSize = imageSize
         var minimumScale: CGFloat = 1
         var maximumScale: CGFloat = 1
 
-        if mediaSize.width > 0.1 && mediaSize.height > 0.1 {
+        if imageSize.width > 0.1 && imageSize.height > 0.1 {
             let xScale = size.width / contentSize.width
             let yScale = size.height / contentSize.height
             minimumScale = min(xScale, yScale)
-            maximumScale = max(maximumZoomScale, minimumScale)
+            maximumScale = max(2.0, minimumScale)
         }
 
         scrollView.contentSize = contentSize
@@ -208,20 +334,12 @@ open class GalleryImageViewController: GalleryItemViewController, UIScrollViewDe
         scrollView.zoomScale = scrollView.minimumZoomScale
     }
 
-    private func addFadeTransition(view: UIView) {
-        let transition = CATransition()
-        transition.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-        transition.type = .fade
-        view.layer.add(transition, forKey: "fadeTransition")
-    }
-
     // MARK: - Scroll View
-
-    open func viewForZooming(in scrollView: UIScrollView) -> UIView? {
+    func viewForZooming(in scrollView: UIScrollView) -> UIView? {
         imageView
     }
 
-    open func scrollViewDidZoom(_ scrollView: UIScrollView) {
+    func scrollViewDidZoom(_ scrollView: UIScrollView) {
         let contentSize = scrollView.contentSize
         guard contentSize != .zero else { return }
 
@@ -232,7 +350,7 @@ open class GalleryImageViewController: GalleryItemViewController, UIScrollViewDe
         if scrollView.isZooming {
             lastScale = scrollView.zoomScale
             lastFrame = imageView.convert(imageView.bounds, to: view)
-        } else if !isTransitioning && exitScaleEnabled && lastScale < exitScale {
+        } else if !isTransitioning && lastScale < exitScale {
             isTransitioning = true
 
             DispatchQueue.main.async {
@@ -242,40 +360,58 @@ open class GalleryImageViewController: GalleryItemViewController, UIScrollViewDe
 
         if !isTransitioning {
             let enabled = abs(scrollView.zoomScale - scrollView.minimumZoomScale) < 0.001
-            transition.panGestureRecognizer.isEnabled = enabled && isTransitionEnabled
+            transition.panGestureRecognizer.isEnabled = enabled
         }
     }
 
-    open func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
-        if hideControlsOnDrag {
-            showControls(false, animated: true)
-        }
+    func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+        showControls(false)
     }
 
-    open func scrollViewWillBeginZooming(_ scrollView: UIScrollView, with view: UIView?) {
-        if hideControlsOnZoom {
-            showControls(false, animated: true)
-        }
+    func scrollViewWillBeginZooming(_ scrollView: UIScrollView, with view: UIView?) {
+        showControls(false)
     }
 
     // MARK: - Transition
-
-    open override func zoomTransitionPrepareAnimatingView(_ animatingImageView: UIImageView) {
-        super.zoomTransitionPrepareAnimatingView(animatingImageView)
-
+    var zoomTransitionAnimatingView: UIView? {
         animatingImageView.image = imageView.image
         animatingImageView.frame = lastFrame ?? imageView.convert(imageView.bounds, to: view)
+        return animatingImageView
     }
 
-    open override func zoomTransitionOnStart() {
-        super.zoomTransitionOnStart()
-
-        lastFrame = nil
-    }
-
-    open override func zoomTransitionHideViews(hide: Bool) {
-        super.zoomTransitionHideViews(hide: hide)
-
+    func zoomTransitionHideViews(hide: Bool) {
         imageView.isHidden = hide
+        titleView.isHidden = hide || !controlsAreVisible
     }
+
+    func zoomTransitionDestinationFrame(for view: UIView, frame: CGRect) -> CGRect {
+        var result = frame
+        let viewSize = frame.size
+
+        if imageSize.width > 0.1 && imageSize.height > 0.1 {
+            let imageRatio = imageSize.height / imageSize.width
+            let viewRatio = viewSize.height / viewSize.width
+
+            result.size = imageRatio <= viewRatio
+                ? CGSize(
+                    width: viewSize.width,
+                    height: (viewSize.width * (imageSize.height / imageSize.width)).rounded(.toNearestOrAwayFromZero)
+                )
+                : CGSize(
+                    width: (viewSize.height * (imageSize.width / imageSize.height)).rounded(.toNearestOrAwayFromZero),
+                    height: viewSize.height
+                )
+            result.origin = CGPoint(
+                x: (viewSize.width / 2 - result.size.width / 2).rounded(.toNearestOrAwayFromZero),
+                y: (viewSize.height / 2 - result.size.height / 2).rounded(.toNearestOrAwayFromZero)
+            )
+        }
+
+        return result
+    }
+
+    private var transition: GalleryZoomTransition = GalleryZoomTransition(interactive: false)
+
+    open var zoomTransition: GalleryZoomTransition? { transition }
+    open var zoomTransitionInteractionController: UIViewControllerInteractiveTransitioning? { transition.interactive ? transition : nil }
 }
